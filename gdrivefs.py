@@ -31,9 +31,8 @@ scope_dict = {'full_control': 'https://www.googleapis.com/auth/drive',
 class GoogleDriveFileSystem(AbstractFileSystem):
     protocol = "gdrive"
 
-    def __init__(self, root, token="browser", access="full_control", **kwargs):
+    def __init__(self, token="browser", access="full_control", **kwargs):
         super().__init__(**kwargs)
-        self.root = root
         self.access = access
         self.scopes = [scope_dict[access]]
         self.token = token
@@ -99,28 +98,16 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         return all_files
 
     def ls(self, path, detail=False):
-        file_id = self.path_to_file_id(path)
+        if path is None or path == '/' or path == "":
+            file_id = 'root'
+        else:
+            file_id = self.path_to_file_id(path)
         files = self._list_directory_by_id(file_id)
         if detail:
             return files
         else:
             return sorted([f["name"] for f in files])
-    #     if path not in self.dircache:
-    #         r = requests.get(self.url.format(org=self.org, repo=self.repo, sha=sha))
-    #         self.dircache[path] = [
-    #             {
-    #                 "name": path + "/" + f["path"] if path else f["path"],
-    #                 "mode": f["mode"],
-    #                 "type": {"blob": "file", "tree": "directory"}[f["type"]],
-    #                 "size": f.get("size", 0),
-    #                 "sha": f["sha"],
-    #             }
-    #             for f in r.json()["tree"]
-    #         ]
-    #     if detail:
-    #         return self.dircache[path]
-    #     else:
-    #         return sorted([f["name"] for f in self.dircache[path]])
+
 
     def _get_directory_child_by_name(self, child_name, directory_file_id):
         all_children = self._list_directory_by_id(directory_file_id)
@@ -131,8 +118,6 @@ class GoogleDriveFileSystem(AbstractFileSystem):
 
     @cached(cache={})
     def path_to_file_id(self, path, parent=None):
-        if parent is None:
-            parent = self.root
         items = path.strip('/').split('/')
         top_file_id = self._get_directory_child_by_name(items[0], parent)
         if len(items) == 1:
