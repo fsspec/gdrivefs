@@ -58,6 +58,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         self.scopes = [scope_dict[access]]
         self.token = token
         self.spaces = spaces
+        self.root_file_id = root_file_id or 'root'
         self.connect(method=token)
         self.ls("")
 
@@ -113,7 +114,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
 
     def ls(self, path, detail=False, trashed=False):
         if path is None or path == '/' or path == "":
-            file_id = 'root'
+            file_id = self.root_file_id
         else:
             file_id = self.path_to_file_id(path, trashed=trashed)
         files = self._list_directory_by_id(file_id, trashed=trashed,
@@ -146,7 +147,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
     def path_to_file_id(self, path, parent=None, trashed=False):
         items = path.strip('/').split('/')
         if parent is None:
-            parent = 'root'
+            parent = self.root_file_id
         top_file_id = self._get_directory_child_by_name(items[0], parent,
                                                         trashed=trashed)
         if len(items) == 1:
@@ -185,7 +186,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
 
 GoogleDriveFileSystem.load_tokens()
 
-DEFAULT_BLOCK_SIZE = 100 * 1024 * 1024
+DEFAULT_BLOCK_SIZE = 5 * 2 ** 20
 
 class GoogleDriveFile(fsspec.spec.AbstractBufferedFile):
 
