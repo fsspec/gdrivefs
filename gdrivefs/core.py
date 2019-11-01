@@ -1,10 +1,6 @@
 import os
 import pickle
-import io
-from base64 import b64decode, b64encode
 import json
-
-from cachetools import cached
 
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -28,6 +24,8 @@ scope_dict = {'full_control': 'https://www.googleapis.com/auth/drive',
               'read_only': 'https://www.googleapis.com/auth/drive.readonly'}
 
 DIR_MIME_TYPE = 'application/vnd.google-apps.folder'
+fields = ','.join(['name', 'id', 'size', 'description', 'trashed', 'mimeType',
+                   'version', 'createdTime', 'modifiedTime'])
 
 
 def _normalize_path(prefix, name):
@@ -36,30 +34,34 @@ def _normalize_path(prefix, name):
 
 
 def _finfo_from_response(f, path_prefix=None):
+    # strictly speaking, other types might be capable of having children
     ftype = 'directory' if f.get('mimeType') == DIR_MIME_TYPE else 'file'
     if path_prefix:
         name = _normalize_path(path_prefix, f['name'])
     else:
-        name =f['name']
-    info = {'id': f['id'],
-            'name': name,
+        name = f['name']
+    info = {'name': name,
             'size': int(f.get('size', 0)),
             'type': ftype}
-    return info
+    f.update(info)
+    return f
 
 
 class GoogleDriveFileSystem(AbstractFileSystem):
-    protocol = "gdrivefs"
+    protocol = "gdrive"
     root_marker = '/'
 
     def __init__(self, root_file_id=None, token="browser",
-                 access="full_control", spaces='drive', **kwargs):
+                 access="full_control", spaces='drive',
+                 tokens_file=None, **kwargs):
         super().__init__(**kwargs)
         self.access = access
         self.scopes = [scope_dict[access]]
         self.token = token
+        self.tfile = tokens_file or tfile
         self.spaces = spaces
         self.root_file_id = root_file_id or 'root'
+        self.load_tokens()
         self.connect(method=token)
         self.ls("")
 
@@ -71,23 +73,21 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         else:
             raise ValueError(f"Invalid connection method `{method}`.")
 
-    @staticmethod
-    def load_tokens():
+    def load_tokens(self):
         """Get "browser" tokens from disc"""
         try:
-            with open(tfile, 'rb') as f:
+            with open(self.tfile, 'rb') as f:
                 tokens = pickle.load(f)
             # backwards compatability
             tokens = {k: (GoogleDriveFileSystem._dict_to_credentials(v)
                           if isinstance(v, dict) else v)
                       for k, v in tokens.items()}
-        except Exception:
+        except Exception as e:
             tokens = {}
         GoogleDriveFileSystem.tokens = tokens
 
-    @staticmethod
-    def _save_tokens():
-        with open(tfile, 'wb') as f:
+    def _save_tokens(self):
+        with open(self.tfile, 'wb') as f:
             pickle.dump(GoogleDriveFileSystem.tokens, f, 2)
 
     def _connect_browser(self):
@@ -105,35 +105,60 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         file_id = self.path_to_file_id(path, trashed=trashed)
         return self._info_by_id(file_id)
 
+    def mkdir(self, path):
+        parent_id = self.path_to_file_id(self._parent(path))
+        meta = {"name": path.split("/", 1)[-1],
+                'mimeType': DIR_MIME_TYPE,
+                "parents": [parent_id]}
+        self.service.create(body=meta).execute()
+        self.invalidate_cache(self._parent(path))
+
+    def _delete(self, file_id):
+        self.service.delete(fileId=file_id)
+
+    def rm(self, path, recursive=True, maxdepth=None):
+        if recursive is False and self.isdir(path) and self.ls(path):
+            raise ValueError("Attempt to delete non-empty folder")
+        self._delete(self.path_to_file_id(path))
+
+    def rmdir(self, path):
+        if not self.isdir(path):
+            raise ValueError("Path is not a directory")
+        self.rm(path, recursive=False)
+
     def _info_by_id(self, file_id, path_prefix=None):
-        fields = 'id, name, size, mimeType'
         response = self.service.get(fileId=file_id, fields=fields,
                                     ).execute()
         return _finfo_from_response(response, path_prefix)
 
     def ls(self, path, detail=False, trashed=False):
-        if path is None or path == '/' or path == "":
-            file_id = self.root_file_id
+        if path in [None, '/']:
+            path = ""
+        if path not in self.dircache:
+            if path == "":
+                file_id = self.root_file_id
+            else:
+                file_id = self.path_to_file_id(path, trashed=trashed)
+            files = self._list_directory_by_id(file_id, trashed=trashed,
+                                               path_prefix=path)
+            self.dircache[path] = files
         else:
-            file_id = self.path_to_file_id(path, trashed=trashed)
-        files = self._list_directory_by_id(file_id, trashed=trashed,
-                                           path_prefix=path)
+            files = self.dircache[path]
         if detail:
             return files
         else:
             return sorted([f["name"] for f in files])
 
-    @cached(cache={})
     def _list_directory_by_id(self, file_id, trashed=False, path_prefix=None):
         all_files = []
         page_token = None
-        fields = 'nextPageToken, files(id, name, size, mimeType)'
+        afields = 'nextPageToken, files(%s)' % fields
         query = f"'{file_id}' in parents  "
         if not trashed:
             query += "and trashed = false "
         while True:
             response = self.service.list(q=query,
-                                         spaces=self.spaces, fields=fields,
+                                         spaces=self.spaces, fields=afields,
                                          pageToken=page_token).execute()
             for f in response.get('files', []):
                 all_files.append(_finfo_from_response(f, path_prefix))
@@ -142,9 +167,16 @@ class GoogleDriveFileSystem(AbstractFileSystem):
                 break
         return all_files
 
-    @cached(cache={})
+    def invalidate_cache(self, path=None):
+        if path:
+            self.dircache.pop(path, None)
+        else:
+            self.dircache.clear()
+
     def path_to_file_id(self, path, parent=None, trashed=False):
         items = path.strip('/').split('/')
+        if path in ["", "/", "root", self.root_file_id]:
+            return self.root_file_id
         if parent is None:
             parent = self.root_file_id
         top_file_id = self._get_directory_child_by_name(items[0], parent,
@@ -165,8 +197,9 @@ class GoogleDriveFileSystem(AbstractFileSystem):
             if child['name'] == child_name:
                 possible_children.append(child['id'])
         if len(possible_children) == 0:
-            raise KeyError(f'Directory {directory_file_id} has no child '
-                           f'named {child_name}')
+            raise FileNotFoundError(
+                f'Directory {directory_file_id} has no child '
+                f'named {child_name}')
         if len(possible_children) == 1:
             return possible_children[0]
         else:
@@ -177,8 +210,6 @@ class GoogleDriveFileSystem(AbstractFileSystem):
     def _open(self, path, mode="rb", **kwargs):
         return GoogleDriveFile(self, path, mode=mode, **kwargs)
 
-
-GoogleDriveFileSystem.load_tokens()
 
 DEFAULT_BLOCK_SIZE = 5 * 2 ** 20
 
