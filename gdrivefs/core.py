@@ -1,18 +1,16 @@
-import io
-import requests
 import os
-import warnings
 import pickle
+import io
+from base64 import b64decode, b64encode
+import json
 
 from cachetools import cached
 
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
 from googleapiclient.errors import HttpError
 
-import fsspec
-from fsspec import AbstractFileSystem
+from fsspec.spec import AbstractFileSystem, AbstractBufferedFile
 
 
 
@@ -31,13 +29,14 @@ scope_dict = {'full_control': 'https://www.googleapis.com/auth/drive',
 
 DIR_MIME_TYPE = 'application/vnd.google-apps.folder'
 
+
 def _normalize_path(prefix, name):
     raw_prefix = prefix.strip('/')
     return '/' + '/'.join([raw_prefix, name])
 
+
 def _finfo_from_response(f, path_prefix=None):
-    ftype = ('directory' if f.get('mimeType') == DIR_MIME_TYPE
-                         else 'file')
+    ftype = 'directory' if f.get('mimeType') == DIR_MIME_TYPE else 'file'
     if path_prefix:
         name = _normalize_path(path_prefix, f['name'])
     else:
@@ -48,8 +47,10 @@ def _finfo_from_response(f, path_prefix=None):
             'type': ftype}
     return info
 
+
 class GoogleDriveFileSystem(AbstractFileSystem):
-    protocol = "gdrive"
+    protocol = "gdrivefs"
+    root_marker = '/'
 
     def __init__(self, root_file_id=None, token="browser",
                  access="full_control", spaces='drive', **kwargs):
@@ -94,13 +95,11 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         credentials = flow.run_console()
         self.tokens[self.access] = credentials
         self._save_tokens()
-        self.service = build('drive', 'v3', credentials=credentials)
+        self.service = build('drive', 'v3', credentials=credentials).files()
 
     def _connect_cache(self):
-        access = self.access
-        if access in self.tokens:
-            credentials = self.tokens[access]
-            self.service = build('drive', 'v3', credentials=credentials)
+        credentials = self.tokens[self.access]
+        self.service = build('drive', 'v3', credentials=credentials).files()
 
     def info(self, path, trashed=False, **kwargs):
         file_id = self.path_to_file_id(path, trashed=trashed)
@@ -108,8 +107,8 @@ class GoogleDriveFileSystem(AbstractFileSystem):
 
     def _info_by_id(self, file_id, path_prefix=None):
         fields = 'id, name, size, mimeType'
-        response = self.service.files().get(fileId=file_id, fields=fields,
-                                            ).execute()
+        response = self.service.get(fileId=file_id, fields=fields,
+                                    ).execute()
         return _finfo_from_response(response, path_prefix)
 
     def ls(self, path, detail=False, trashed=False):
@@ -133,9 +132,9 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         if not trashed:
             query += "and trashed = false "
         while True:
-            response = self.service.files().list(q=query,
-                                            spaces=self.spaces, fields=fields,
-                                            pageToken=page_token).execute()
+            response = self.service.list(q=query,
+                                         spaces=self.spaces, fields=fields,
+                                         pageToken=page_token).execute()
             for f in response.get('files', []):
                 all_files.append(_finfo_from_response(f, path_prefix))
             page_token = response.get('nextPageToken', None)
@@ -175,48 +174,37 @@ class GoogleDriveFileSystem(AbstractFileSystem):
                            f'child named {child_name}. Unable to resolve path '
                            'to file_id.')
 
-    def _open_file_id(self, file_id, **kwargs):
-         request = self.service.files().get_media(fileId=file_id)
-         return request.execute()
-
     def _open(self, path, mode="rb", **kwargs):
-        if mode != "rb":
-            raise NotImplementedError
         return GoogleDriveFile(self, path, mode=mode, **kwargs)
+
 
 GoogleDriveFileSystem.load_tokens()
 
 DEFAULT_BLOCK_SIZE = 5 * 2 ** 20
 
-class GoogleDriveFile(fsspec.spec.AbstractBufferedFile):
 
-    def __init__(self, gdfs, path, mode='rb', block_size=DEFAULT_BLOCK_SIZE,
-                 acl=None, consistency='md5', metadata=None,
-                 autocommit=True, **kwargs):
+class GoogleDriveFile(AbstractBufferedFile):
+
+    def __init__(self, fs, path, mode='rb', block_size=DEFAULT_BLOCK_SIZE,
+                 consistency='md5', autocommit=True, **kwargs):
         """
         Open a file.
 
         Parameters
         ----------
-        gdfs: instance of GoogleDriveFileSystem
-        file_id: str
-            Google drive unique file_id
+        fs: instance of GoogleDriveFileSystem
         mode: str
             Normal file modes. Currently only 'wb' amd 'rb'.
         block_size: int
             Buffer size for reading or writing
         """
-        super().__init__(gdfs, path, mode, block_size, autocommit=autocommit,
+        super().__init__(fs, path, mode, block_size, autocommit=autocommit,
                          **kwargs)
-        self.gdfs = gdfs
-        self.path = path
-        self.file_id = gdfs.path_to_file_id(path)
-        # don't know what all the other stuff does
-        #self.metadata = metadata
-        # if mode == 'wb':
-        #     if self.blocksize < GCS_MIN_BLOCK_SIZE:
-        #         warnings.warn('Setting block size to minimum value, 2**18')
-        #         self.blocksize = GCS_MIN_BLOCK_SIZE
+
+        if mode == 'wb':
+            self.location = None
+        else:
+            self.file_id = fs.path_to_file_id(path)
 
     def _fetch_range(self, start=None, end=None):
         """ Get data from Google Drive
@@ -232,12 +220,74 @@ class GoogleDriveFile(fsspec.spec.AbstractBufferedFile):
         else:
             head = {}
         try:
-            files_service = self.gdfs.service.files()
+            files_service = self.fs.service
             media_obj = files_service.get_media(fileId=self.file_id)
             media_obj.headers.update(head)
             data = media_obj.execute()
             return data
         except HttpError as e:
+            # TODO : doc says server might send everything if range is outside
             if 'not satisfiable' in str(e):
                 return b''
             raise
+
+    def _upload_chunk(self, final=False):
+        """ Write one part of a multi-block file upload
+
+        Parameters
+        ----------
+        final: bool
+            Complete and commit upload
+        """
+        self.buffer.seek(0)
+        data = self.buffer.getvalue()
+        head = {}
+        l = len(data)
+        if final and self.autocommit:
+            if l:
+                part = "%i-%i" % (self.offset, self.offset + l - 1)
+                head['Content-Range'] = 'bytes %s/%i' % (part, self.offset + l)
+            else:
+                # closing when buffer is empty
+                head['Content-Range'] = 'bytes */%i' % self.offset
+                data = None
+        else:
+            head['Content-Range'] = 'bytes %i-%i/*' % (
+                self.offset, self.offset + l - 1)
+        head.update({'Content-Type': 'application/octet-stream',
+                     'Content-Length': str(l)})
+        req = self.fs.service._http.request
+        head, body = req(self.location, method="PUT", body=data,
+                         headers=head)
+        status = int(head['status'])
+        assert status < 400, "Init upload failed"
+        if status in [200, 201]:
+            # server thinks we are finished, this should happen
+            # only when closing
+            self.file_id = json.loads(body.decode())['id']
+        elif 'Range' in head:
+            assert status == 308
+            assert head['Range'].split("=") == part
+        else:
+            raise IOError
+        return True
+
+    def commit(self):
+        """If not auto-committing, finalize file"""
+        self.autocommit = True
+        self._upload_chunk(final=True)
+
+    def _initiate_upload(self):
+        """ Create multi-upload """
+        parent_id = self.fs.path_to_file_id(self.fs._parent(self.path))
+        head = {"Content-Type": "application/json; charset=UTF-8"}
+        # also allows description, MIME type, version, thumbnail...
+        body = json.dumps({"name": self.path.rsplit('/', 1)[-1],
+                           "parents": [parent_id]}).encode()
+        req = self.fs.service._http.request
+        r = req("https://www.googleapis.com/upload/drive/v3/files"
+                "?uploadType=resumable", method='POST',
+                headers=head, body=body)
+        head = r[0]
+        assert int(head['status']) < 400, "Init upload failed"
+        self.location = r[0]['location']
