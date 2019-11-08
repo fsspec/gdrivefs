@@ -117,7 +117,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
             return self._info_by_id(file_id)
 
     def mkdir(self, path, create_parents=True, **kwargs):
-        if create_parents:
+        if create_parents and self._parent(path):
             self.makedirs(self._parent(path), exist_ok=True)
         parent_id = self.path_to_file_id(self._parent(path))
         meta = {"name": path.split("/", 1)[-1],
@@ -137,7 +137,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         self.mkdir(path, create_parents=False)
 
     def _delete(self, file_id):
-        self.service.delete(fileId=file_id)
+        self.service.delete(fileId=file_id).execute()
 
     def rm(self, path, recursive=True, maxdepth=None):
         if recursive is False and self.isdir(path) and self.ls(path):
@@ -350,6 +350,9 @@ class GoogleDriveFile(AbstractBufferedFile):
         body = json.dumps({"name": self.path.rsplit('/', 1)[-1],
                            "parents": [parent_id]}).encode()
         req = self.fs.service._http.request
+        # TODO : this creates a new file. If the file exists, you should
+        #   update it by getting the ID and using PATCH, else you get two
+        #   identically-named files
         r = req("https://www.googleapis.com/upload/drive/v3/files"
                 "?uploadType=resumable", method='POST',
                 headers=head, body=body)
