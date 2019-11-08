@@ -21,4 +21,4 @@ notifications:
   email: false
 before_install:
   - openssl aes-256-cbc -K $encrypted_5ddb9a250ae2_key -iv $encrypted_5ddb9a250ae2_iv
-    -in .google_drive_tokens.enc -out ~\/.google_drive_tokens -d
+    -in .google_drive_tokens.enc -out tfile.pickle -d
