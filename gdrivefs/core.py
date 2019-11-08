@@ -117,7 +117,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
             return self._info_by_id(file_id)
 
     def mkdir(self, path, create_parents=True, **kwargs):
-        if create_parents:
+        if create_parents and self._parent(path):
             self.makedirs(self._parent(path), exist_ok=True)
         parent_id = self.path_to_file_id(self._parent(path))
         meta = {"name": path.split("/", 1)[-1],
