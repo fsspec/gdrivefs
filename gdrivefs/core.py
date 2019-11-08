@@ -350,6 +350,9 @@ class GoogleDriveFile(AbstractBufferedFile):
         body = json.dumps({"name": self.path.rsplit('/', 1)[-1],
                            "parents": [parent_id]}).encode()
         req = self.fs.service._http.request
+        # TODO : this creates a new file. If the file exists, you should
+        #   update it by getting the ID and using PATCH, else you get two
+        #   identically-named files
         r = req("https://www.googleapis.com/upload/drive/v3/files"
                 "?uploadType=resumable", method='POST',
                 headers=head, body=body)

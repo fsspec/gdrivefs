@@ -16,7 +16,10 @@ def creds():
     try:
         yield tfile
     finally:
-        fs.rm(testdir, recursive=True)
+        try:
+            fs.rm(testdir, recursive=True)
+        except IOError:
+            pass
 
 
 def test_simple(creds):
