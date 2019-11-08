@@ -137,7 +137,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         self.mkdir(path, create_parents=False)
 
     def _delete(self, file_id):
-        self.service.delete(fileId=file_id)
+        self.service.delete(fileId=file_id).execute()
 
     def rm(self, path, recursive=True, maxdepth=None):
         if recursive is False and self.isdir(path) and self.ls(path):
