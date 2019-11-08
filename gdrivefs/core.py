@@ -1,5 +1,6 @@
 import os
 import pickle
+import re
 import json
 
 from googleapiclient.discovery import build
@@ -7,8 +8,6 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.errors import HttpError
 
 from fsspec.spec import AbstractFileSystem, AbstractBufferedFile
-
-
 
 not_secret = {"client_id": "464800473488-54uc38r5jos4pmk7vqfhg58jjjtd6vr9"
                            ".apps.googleusercontent.com",
@@ -34,13 +33,14 @@ def _normalize_path(prefix, name):
 
 
 def _finfo_from_response(f, path_prefix=None):
-    # strictly speaking, other types might be capable of having children
+    # strictly speaking, other types might be capable of having children,
+    # such as packages
     ftype = 'directory' if f.get('mimeType') == DIR_MIME_TYPE else 'file'
     if path_prefix:
         name = _normalize_path(path_prefix, f['name'])
     else:
         name = f['name']
-    info = {'name': name,
+    info = {'name': name.lstrip('/'),
             'size': int(f.get('size', 0)),
             'type': ftype}
     f.update(info)
@@ -49,7 +49,7 @@ def _finfo_from_response(f, path_prefix=None):
 
 class GoogleDriveFileSystem(AbstractFileSystem):
     protocol = "gdrive"
-    root_marker = '/'
+    root_marker = ''
 
     def __init__(self, root_file_id=None, token="browser",
                  access="full_control", spaces='drive',
@@ -78,10 +78,6 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         try:
             with open(self.tfile, 'rb') as f:
                 tokens = pickle.load(f)
-            # backwards compatability
-            tokens = {k: (GoogleDriveFileSystem._dict_to_credentials(v)
-                          if isinstance(v, dict) else v)
-                      for k, v in tokens.items()}
         except Exception as e:
             tokens = {}
         GoogleDriveFileSystem.tokens = tokens
@@ -95,23 +91,49 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         credentials = flow.run_console()
         self.tokens[self.access] = credentials
         self._save_tokens()
-        self.service = build('drive', 'v3', credentials=credentials).files()
+        srv = build('drive', 'v3', credentials=credentials)
+        self._drives = srv.drives()
+        self.service = srv.files()
+
+    @property
+    def drives(self):
+        return self._drives.list().execute()
 
     def _connect_cache(self):
         credentials = self.tokens[self.access]
-        self.service = build('drive', 'v3', credentials=credentials).files()
+        srv = build('drive', 'v3', credentials=credentials)
+        self._drives = srv.drives()
+        self.service = srv.files()
 
     def info(self, path, trashed=False, **kwargs):
-        file_id = self.path_to_file_id(path, trashed=trashed)
-        return self._info_by_id(file_id)
+        if self._parent(path) in self.dircache:
+            listing = self.dircache[self._parent(path)]
+            out = [l for l in listing if l['name'] == path]
+            if not out:
+                raise FileNotFoundError
+            return out[0]
+        else:
+            file_id = self.path_to_file_id(path, trashed=trashed)
+            return self._info_by_id(file_id)
 
-    def mkdir(self, path):
+    def mkdir(self, path, create_parents=True, **kwargs):
+        if create_parents:
+            self.makedirs(self._parent(path), exist_ok=True)
         parent_id = self.path_to_file_id(self._parent(path))
         meta = {"name": path.split("/", 1)[-1],
                 'mimeType': DIR_MIME_TYPE,
                 "parents": [parent_id]}
         self.service.create(body=meta).execute()
         self.invalidate_cache(self._parent(path))
+
+    def makedirs(self, path, exist_ok=True):
+        if self.isdir(path):
+            if exist_ok:
+                return
+            else:
+                raise FileExistsError(path)
+        self.makedirs(self._parent(path), exist_ok=True)
+        self.mkdir(path, create_parents=False)
 
     def _delete(self, file_id):
         self.service.delete(fileId=file_id)
@@ -120,6 +142,8 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         if recursive is False and self.isdir(path) and self.ls(path):
             raise ValueError("Attempt to delete non-empty folder")
         self._delete(self.path_to_file_id(path))
+        self.invalidate_cache(path)
+        self.invalidate_cache(self._parent(path))
 
     def rmdir(self, path):
         if not self.isdir(path):
@@ -130,6 +154,14 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         response = self.service.get(fileId=file_id, fields=fields,
                                     ).execute()
         return _finfo_from_response(response, path_prefix)
+
+    def export(self, path, mime_type):
+        """ Convert a google-native file to other format and download
+
+        mime_type is something like "text/plain"
+        """
+        file_id = self.path_to_file_id(path)
+        return self.service.export(fileId=file_id, mimeType=mime_type).execute()
 
     def ls(self, path, detail=False, trashed=False):
         if path in [None, '/']:
@@ -162,8 +194,9 @@ class GoogleDriveFileSystem(AbstractFileSystem):
                                          pageToken=page_token).execute()
             for f in response.get('files', []):
                 all_files.append(_finfo_from_response(f, path_prefix))
+            more = response.get('incompleteSearch', False)
             page_token = response.get('nextPageToken', None)
-            if page_token is None:
+            if page_token is None or more is False:
                 break
         return all_files
 
@@ -217,7 +250,7 @@ DEFAULT_BLOCK_SIZE = 5 * 2 ** 20
 class GoogleDriveFile(AbstractBufferedFile):
 
     def __init__(self, fs, path, mode='rb', block_size=DEFAULT_BLOCK_SIZE,
-                 consistency='md5', autocommit=True, **kwargs):
+                 autocommit=True, **kwargs):
         """
         Open a file.
 
@@ -227,7 +260,7 @@ class GoogleDriveFile(AbstractBufferedFile):
         mode: str
             Normal file modes. Currently only 'wb' amd 'rb'.
         block_size: int
-            Buffer size for reading or writing
+            Buffer size for reading or writing (default 5MB)
         """
         super().__init__(fs, path, mode, block_size, autocommit=autocommit,
                          **kwargs)
@@ -322,3 +355,15 @@ class GoogleDriveFile(AbstractBufferedFile):
         head = r[0]
         assert int(head['status']) < 400, "Init upload failed"
         self.location = r[0]['location']
+
+    def discard(self):
+        """Cancel in-progress multi-upload
+        """
+        if self.location is None:
+            return
+        uid = re.findall('upload_id=([^&=?]+)', self.location)
+        head, _ = self.gcsfs._call(
+            'DELETE',
+            'https://www.googleapis.com/upload/drive/v3/files',
+            params={'uploadType': 'resumable', 'upload_id': uid})
+        assert int(head['status']) < 400, "Cancel upload failed"
