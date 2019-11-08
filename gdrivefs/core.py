@@ -132,7 +132,8 @@ class GoogleDriveFileSystem(AbstractFileSystem):
                 return
             else:
                 raise FileExistsError(path)
-        self.makedirs(self._parent(path), exist_ok=True)
+        if self._parent(path):
+            self.makedirs(self._parent(path), exist_ok=True)
         self.mkdir(path, create_parents=False)
 
     def _delete(self, file_id):
