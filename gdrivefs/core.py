@@ -87,8 +87,9 @@ class GoogleDriveFileSystem(AbstractFileSystem):
             pickle.dump(GoogleDriveFileSystem.tokens, f, 2)
 
     def _connect_browser(self):
-        flow = InstalledAppFlow.from_client_config(client_config, self.scopes)
-        credentials = flow.run_console()
+        import pydata_google_auth
+        credentials = pydata_google_auth.get_user_credentials(self.scopes)
+
         self.tokens[self.access] = credentials
         self._save_tokens()
         srv = build('drive', 'v3', credentials=credentials)
