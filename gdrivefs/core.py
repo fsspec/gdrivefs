@@ -5,6 +5,7 @@ import json
 
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.credentials import AnonymousCredentials
 from googleapiclient.errors import HttpError
 
 from fsspec.spec import AbstractFileSystem, AbstractBufferedFile
@@ -58,6 +59,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         self.access = access
         self.scopes = [scope_dict[access]]
         self.token = token
+        self._drives = None
         self.tfile = tokens_file or tfile
         self.spaces = spaces
         self.root_file_id = root_file_id or 'root'
@@ -70,6 +72,8 @@ class GoogleDriveFileSystem(AbstractFileSystem):
             self._connect_browser()
         elif method == 'cache':
             self._connect_cache()
+        elif method == 'anon':
+            self._connect_anon()
         else:
             raise ValueError(f"Invalid connection method `{method}`.")
 
@@ -97,12 +101,20 @@ class GoogleDriveFileSystem(AbstractFileSystem):
 
     @property
     def drives(self):
-        return self._drives.list().execute()
+        if self._drives is not None:
+            return self._drives.list().execute()
+        else:
+            return []
 
     def _connect_cache(self):
         credentials = self.tokens[self.access]
         srv = build('drive', 'v3', credentials=credentials)
         self._drives = srv.drives()
+        self.service = srv.files()
+
+    def _connect_anon(self):
+        credentials = AnonymousCredentials()
+        srv = build('drive', 'v3', credentials=credentials)
         self.service = srv.files()
 
     def info(self, path, trashed=False, **kwargs):
