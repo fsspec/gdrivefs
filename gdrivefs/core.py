@@ -1,25 +1,12 @@
-import os
-import pickle
 import re
 import json
 
 from googleapiclient.discovery import build
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.credentials import AnonymousCredentials
 from googleapiclient.errors import HttpError
+from google.auth.credentials import AnonymousCredentials
 
 from fsspec.spec import AbstractFileSystem, AbstractBufferedFile
 
-not_secret = {"client_id": "464800473488-54uc38r5jos4pmk7vqfhg58jjjtd6vr9"
-                           ".apps.googleusercontent.com",
-              "client_secret": "919dmsddLQRbbXkt3-B7gFYd"}
-client_config = {'installed': {
-    'client_id': not_secret['client_id'],
-    'client_secret': not_secret['client_secret'],
-    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-    "token_uri": "https://accounts.google.com/o/oauth2/token"
-}}
-tfile = os.path.join(os.path.expanduser("~"), '.google_drive_tokens')
 scope_dict = {'full_control': 'https://www.googleapis.com/auth/drive',
               'read_only': 'https://www.googleapis.com/auth/drive.readonly'}
 
@@ -54,47 +41,27 @@ class GoogleDriveFileSystem(AbstractFileSystem):
 
     def __init__(self, root_file_id=None, token="browser",
                  access="full_control", spaces='drive',
-                 tokens_file=None, **kwargs):
+                 **kwargs):
         super().__init__(**kwargs)
         self.access = access
         self.scopes = [scope_dict[access]]
         self.token = token
-        self._drives = None
-        self.tfile = tokens_file or tfile
         self.spaces = spaces
         self.root_file_id = root_file_id or 'root'
-        self.load_tokens()
         self.connect(method=token)
         self.ls("")
 
     def connect(self, method=None):
         if method == 'browser':
             self._connect_browser()
-        elif method == 'cache':
-            self._connect_cache()
         elif method == 'anon':
             self._connect_anon()
         else:
             raise ValueError(f"Invalid connection method `{method}`.")
 
-    def load_tokens(self):
-        """Get "browser" tokens from disc"""
-        try:
-            with open(self.tfile, 'rb') as f:
-                tokens = pickle.load(f)
-        except Exception as e:
-            tokens = {}
-        GoogleDriveFileSystem.tokens = tokens
-
-    def _save_tokens(self):
-        with open(self.tfile, 'wb') as f:
-            pickle.dump(GoogleDriveFileSystem.tokens, f, 2)
-
     def _connect_browser(self):
-        flow = InstalledAppFlow.from_client_config(client_config, self.scopes)
-        credentials = flow.run_console()
-        self.tokens[self.access] = credentials
-        self._save_tokens()
+        import pydata_google_auth
+        credentials = pydata_google_auth.get_user_credentials(self.scopes)
         srv = build('drive', 'v3', credentials=credentials)
         self._drives = srv.drives()
         self.service = srv.files()
@@ -105,12 +72,6 @@ class GoogleDriveFileSystem(AbstractFileSystem):
             return self._drives.list().execute()
         else:
             return []
-
-    def _connect_cache(self):
-        credentials = self.tokens[self.access]
-        srv = build('drive', 'v3', credentials=credentials)
-        self._drives = srv.drives()
-        self.service = srv.files()
 
     def _connect_anon(self):
         credentials = AnonymousCredentials()
