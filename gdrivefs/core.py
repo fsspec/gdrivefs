@@ -1,9 +1,9 @@
-import pickle
 import re
 import json
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from google.auth.credentials import AnonymousCredentials
 
 from fsspec.spec import AbstractFileSystem, AbstractBufferedFile
 
@@ -54,8 +54,8 @@ class GoogleDriveFileSystem(AbstractFileSystem):
     def connect(self, method=None):
         if method == 'browser':
             self._connect_browser()
-        elif method == 'cache':
-            self._connect_cache()
+        elif method == 'anon':
+            self._connect_anon()
         else:
             raise ValueError(f"Invalid connection method `{method}`.")
 
@@ -68,12 +68,14 @@ class GoogleDriveFileSystem(AbstractFileSystem):
 
     @property
     def drives(self):
-        return self._drives.list().execute()
+        if self._drives is not None:
+            return self._drives.list().execute()
+        else:
+            return []
 
-    def _connect_cache(self):
-        credentials = self.tokens[self.access]
+    def _connect_anon(self):
+        credentials = AnonymousCredentials()
         srv = build('drive', 'v3', credentials=credentials)
-        self._drives = srv.drives()
         self.service = srv.files()
 
     def info(self, path, trashed=False, **kwargs):
