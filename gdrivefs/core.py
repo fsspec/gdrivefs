@@ -45,13 +45,20 @@ class GoogleDriveFileSystem(AbstractFileSystem):
                  access="full_control", spaces='drive',
                  **kwargs):
         """
+        Access to dgrive as a file-system
 
-        :param root_file_id:
+        :param root_file_id: str or None
+            If you have a share, drive or folder ID to treat as the FS root, enter
+            it here. Otherwise, you will get your default drive
         :param token: str
-            One of "anon", "browser", "cache"
+            One of "anon", "browser", "cache". Using "browser" will prompt a URL to
+            be put in a browser, and cache the response for future use with token="cache".
+            "browser" remove any previously cached value.
         :param access: str
             One of "full_control", "read_only
         :param spaces:
+            Category of files to search, can be  'drive', 'appDataFolder' and 'photos'.
+            Of these, only the first is general
         :param kwargs:
             Passed to parent
         """
