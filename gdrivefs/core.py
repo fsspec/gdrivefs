@@ -1,11 +1,13 @@
 import re
 import json
+import os
 
+from fsspec.spec import AbstractFileSystem, AbstractBufferedFile
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.auth.credentials import AnonymousCredentials
+import pydata_google_auth
 
-from fsspec.spec import AbstractFileSystem, AbstractBufferedFile
 
 scope_dict = {'full_control': 'https://www.googleapis.com/auth/drive',
               'read_only': 'https://www.googleapis.com/auth/drive.readonly'}
@@ -42,6 +44,24 @@ class GoogleDriveFileSystem(AbstractFileSystem):
     def __init__(self, root_file_id=None, token="browser",
                  access="full_control", spaces='drive',
                  **kwargs):
+        """
+        Access to dgrive as a file-system
+
+        :param root_file_id: str or None
+            If you have a share, drive or folder ID to treat as the FS root, enter
+            it here. Otherwise, you will get your default drive
+        :param token: str
+            One of "anon", "browser", "cache". Using "browser" will prompt a URL to
+            be put in a browser, and cache the response for future use with token="cache".
+            "browser" remove any previously cached value.
+        :param access: str
+            One of "full_control", "read_only
+        :param spaces:
+            Category of files to search, can be  'drive', 'appDataFolder' and 'photos'.
+            Of these, only the first is general
+        :param kwargs:
+            Passed to parent
+        """
         super().__init__(**kwargs)
         self.access = access
         self.scopes = [scope_dict[access]]
@@ -53,30 +73,30 @@ class GoogleDriveFileSystem(AbstractFileSystem):
 
     def connect(self, method=None):
         if method == 'browser':
-            self._connect_browser()
+            cred = self._connect_browser()
+        elif method == "cache":
+            cred = self._connect_cache()
         elif method == 'anon':
-            self._connect_anon()
+            cred = AnonymousCredentials()
         else:
             raise ValueError(f"Invalid connection method `{method}`.")
-
-    def _connect_browser(self):
-        import pydata_google_auth
-        credentials = pydata_google_auth.get_user_credentials(self.scopes)
-        srv = build('drive', 'v3', credentials=credentials)
+        srv = build('drive', 'v3', credentials=cred)
         self._drives = srv.drives()
         self.service = srv.files()
+
+    def _connect_browser(self):
+        os.remove(pydata_google_auth.cache.READ_WRITE._path)
+        return self._connect_cache()
+
+    def _connect_cache(self):
+        return pydata_google_auth.get_user_credentials(self.scopes)
 
     @property
     def drives(self):
         if self._drives is not None:
-            return self._drives.list().execute()
+            return self._drives.list().execute()['drives']
         else:
             return []
-
-    def _connect_anon(self):
-        credentials = AnonymousCredentials()
-        srv = build('drive', 'v3', credentials=credentials)
-        self.service = srv.files()
 
     def info(self, path, trashed=False, **kwargs):
         if self._parent(path) in self.dircache:
