@@ -53,7 +53,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         :param token: str
             One of "anon", "browser", "cache". Using "browser" will prompt a URL to
             be put in a browser, and cache the response for future use with token="cache".
-            "browser" remove any previously cached value.
+            "browser" will remove any previously cached token file if it exists.
         :param access: str
             One of "full_control", "read_only
         :param spaces:
@@ -85,7 +85,10 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         self.service = srv.files()
 
     def _connect_browser(self):
-        os.remove(pydata_google_auth.cache.READ_WRITE._path)
+        try:
+            os.remove(pydata_google_auth.cache.READ_WRITE._path)
+        except OSError:
+            pass
         return self._connect_cache()
 
     def _connect_cache(self):
