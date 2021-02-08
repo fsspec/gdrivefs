@@ -116,7 +116,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         if create_parents and self._parent(path):
             self.makedirs(self._parent(path), exist_ok=True)
         parent_id = self.path_to_file_id(self._parent(path))
-        meta = {"name": path.split("/", 1)[-1],
+        meta = {"name": path.rstrip("/").rsplit("/", 1)[-1],
                 'mimeType': DIR_MIME_TYPE,
                 "parents": [parent_id]}
         self.service.create(body=meta).execute()

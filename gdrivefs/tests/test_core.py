@@ -21,7 +21,6 @@ def creds():
         except IOError:
             pass
 
-
 def test_simple(creds):
     fs = gdrivefs.GoogleDriveFileSystem(token='cache', tokens_file=creds)
     assert fs.ls("")
@@ -30,3 +29,17 @@ def test_simple(creds):
     with fs.open(fn, 'wb') as f:
         f.write(data)
     assert fs.cat(fn) == data
+
+def test_create_directory(creds):
+    fs = gdrivefs.GoogleDriveFileSystem(token='cache', tokens_file=creds)
+    fs.makedirs(test_dir + "/data")
+    fs.makedirs(test_dir + "/data/bar/baz")
+
+    assert fs.exists(test_dir + "/data")
+    assert fs.exists(test_dir + "/data/bar")
+    assert fs.exists(test_dir + "/data/bar/baz")
+
+    data = b"intermediate path"
+    with fs.open(test_dir + "/data/bar/test", "wb") as stream:
+        stream.write(data)
+    assert fs.cat(test_dir + "/data/bar/test") == data
