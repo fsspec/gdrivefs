@@ -14,7 +14,7 @@ scope_dict = {'full_control': 'https://www.googleapis.com/auth/drive',
 
 DIR_MIME_TYPE = 'application/vnd.google-apps.folder'
 fields = ','.join(['name', 'id', 'size', 'description', 'trashed', 'mimeType',
-                   'version', 'createdTime', 'modifiedTime'])
+                   'version', 'createdTime', 'modifiedTime', 'capabilities'])
 
 
 def _normalize_path(prefix, name):
@@ -69,7 +69,8 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         self.spaces = spaces
         self.root_file_id = root_file_id or 'root'
         self.connect(method=token)
-        self.ls("")
+        if token != "anon":
+            self.ls("")
 
     def connect(self, method=None):
         if method == 'browser':
