@@ -194,7 +194,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
                 all_files.append(_finfo_from_response(f, path_prefix))
             more = response.get('incompleteSearch', False)
             page_token = response.get('nextPageToken', None)
-            if page_token is None and more is False:
+            if page_token is None:
                 break
         return all_files
 
