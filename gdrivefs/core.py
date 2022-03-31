@@ -69,8 +69,6 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         self.spaces = spaces
         self.root_file_id = root_file_id or 'root'
         self.connect(method=token)
-        if token != "anon":
-            self.ls("")
 
     def connect(self, method=None):
         if method == 'browser':
@@ -93,7 +91,9 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         return self._connect_cache()
 
     def _connect_cache(self):
-        return pydata_google_auth.get_user_credentials(self.scopes)
+        return pydata_google_auth.get_user_credentials(
+            self.scopes, use_local_webserver=True
+        )
 
     @property
     def drives(self):
@@ -101,17 +101,6 @@ class GoogleDriveFileSystem(AbstractFileSystem):
             return self._drives.list().execute()['drives']
         else:
             return []
-
-    def info(self, path, trashed=False, **kwargs):
-        if self._parent(path) in self.dircache:
-            listing = self.dircache[self._parent(path)]
-            out = [l for l in listing if l['name'] == path]
-            if not out:
-                raise FileNotFoundError
-            return out[0]
-        else:
-            file_id = self.path_to_file_id(path, trashed=trashed)
-            return self._info_by_id(file_id)
 
     def mkdir(self, path, create_parents=True, **kwargs):
         if create_parents and self._parent(path):
@@ -162,18 +151,23 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         return self.service.export(fileId=file_id, mimeType=mime_type).execute()
 
     def ls(self, path, detail=False, trashed=False):
+        path = self._strip_protocol(path)
         if path in [None, '/']:
             path = ""
-        if path not in self.dircache:
+        files = self._ls_from_cache(path)
+        if not files:
             if path == "":
                 file_id = self.root_file_id
             else:
                 file_id = self.path_to_file_id(path, trashed=trashed)
             files = self._list_directory_by_id(file_id, trashed=trashed,
                                                path_prefix=path)
-            self.dircache[path] = files
-        else:
-            files = self.dircache[path]
+            if files:
+                self.dircache[path] = files
+            else:
+                file_id = self.path_to_file_id(path, trashed=trashed)
+                files = [self._info_by_id(file_id)]
+
         if detail:
             return files
         else:
@@ -197,12 +191,6 @@ class GoogleDriveFileSystem(AbstractFileSystem):
             if page_token is None:
                 break
         return all_files
-
-    def invalidate_cache(self, path=None):
-        if path:
-            self.dircache.pop(path, None)
-        else:
-            self.dircache.clear()
 
     def path_to_file_id(self, path, parent=None, trashed=False):
         items = path.strip('/').split('/')
