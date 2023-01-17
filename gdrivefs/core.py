@@ -315,9 +315,8 @@ class GoogleDriveFile(AbstractBufferedFile):
             # server thinks we are finished, this should happen
             # only when closing
             self.file_id = json.loads(body.decode())['id']
-        elif 'Range' in head:
+        elif 'range' in head:
             assert status == 308
-            assert head['Range'].split("=") == part
         else:
             raise IOError
         return True
