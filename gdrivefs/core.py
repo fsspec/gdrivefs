@@ -6,6 +6,7 @@ from fsspec.spec import AbstractFileSystem, AbstractBufferedFile
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.auth.credentials import AnonymousCredentials
+from google.oauth2 import service_account
 import pydata_google_auth
 
 
@@ -42,7 +43,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
     root_marker = ''
 
     def __init__(self, root_file_id=None, token="browser",
-                 access="full_control", spaces='drive',
+                 access="full_control", spaces='drive', creds=None,
                  **kwargs):
         """
         Access to dgrive as a file-system
@@ -51,7 +52,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
             If you have a share, drive or folder ID to treat as the FS root, enter
             it here. Otherwise, you will get your default drive
         :param token: str
-            One of "anon", "browser", "cache". Using "browser" will prompt a URL to
+            One of "anon", "browser", "cache", "service_account". Using "browser" will prompt a URL to
             be put in a browser, and cache the response for future use with token="cache".
             "browser" will remove any previously cached token file if it exists.
         :param access: str
@@ -59,6 +60,15 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         :param spaces:
             Category of files to search, can be  'drive', 'appDataFolder' and 'photos'.
             Of these, only the first is general
+        :param creds: None or dict
+            Required just for "service_account" token, a dict containing the service account
+            credentials obtainend in GCP console. The dict content is the same as the json file
+            downloaded from GCP console. More details can be found here:
+            https://cloud.google.com/iam/docs/service-account-creds#key-types
+            This credential can be usful when integrating with other GCP services, and when you
+            don't want the user to be prompted to authenticate.
+            The files need to be shared with the service account email address, that can be found
+            in the json file.
         :param kwargs:
             Passed to parent
         """
@@ -68,6 +78,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         self.token = token
         self.spaces = spaces
         self.root_file_id = root_file_id or 'root'
+        self.creds = creds
         self.connect(method=token)
 
     def connect(self, method=None):
@@ -77,6 +88,8 @@ class GoogleDriveFileSystem(AbstractFileSystem):
             cred = self._connect_cache()
         elif method == 'anon':
             cred = AnonymousCredentials()
+        elif method is "service_account":
+            cred = self._connect_service_account()
         else:
             raise ValueError(f"Invalid connection method `{method}`.")
         srv = build('drive', 'v3', credentials=cred)
@@ -94,7 +107,11 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         return pydata_google_auth.get_user_credentials(
             self.scopes, use_local_webserver=True
         )
-
+    
+    def _connect_service_account(self):
+        return service_account.Credentials.from_service_account_info(
+                                    info=self.creds, 
+                                    scopes=self.scopes)
     @property
     def drives(self):
         if self._drives is not None:
