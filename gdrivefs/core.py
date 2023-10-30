@@ -62,7 +62,13 @@ class GoogleDriveFileSystem(AbstractFileSystem):
             Of these, only the first is general
         :param creds: None or dict
             Required just for "service_account" token, a dict containing the service account
-            credentials.
+            credentials obtainend in GCP console. The dict content is the same as the json file
+            downloaded from GCP console. More details can be found here:
+            https://cloud.google.com/iam/docs/service-account-creds#key-types
+            This credential can be usful when integrating with other GCP services, and when you
+            don't want the user to be prompted to authenticate.
+            The files need to be shared with the service account email address, that can be found
+            in the json file.
         :param kwargs:
             Passed to parent
         """
