@@ -33,4 +33,7 @@ dependencies = [
 [project.urls]
 Source = "http://github.com/fsspec/gdrivefs"
 
+[tool.setuptools]
+packages = ["gdrivefs", "gdrivefs.tests"]
+
 [tool.setuptools_scm]
