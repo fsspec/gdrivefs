@@ -33,9 +33,7 @@ dependencies = [
 [project.urls]
 Source = "http://github.com/fsspec/gdrivefs"
 
-[tool.setuptools.packages.find]
-include = ["gdrivefs", "gdrivefs.tests"]
-exclude = ["binder"]
-namespaces = false
+[tool.setuptools]
+packages = ["gdrivefs", "gdrivefs.tests"]
 
 [tool.setuptools_scm]
