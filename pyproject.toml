@@ -37,3 +37,4 @@ Source = "http://github.com/fsspec/gdrivefs"
 packages = ["gdrivefs", "gdrivefs.tests"]
 
 [tool.setuptools_scm]
+version_file = "gdrivefs/_version.py"
