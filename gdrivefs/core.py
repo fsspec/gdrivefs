@@ -88,7 +88,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
             cred = self._connect_cache()
         elif method == 'anon':
             cred = AnonymousCredentials()
-        elif method is "service_account":
+        elif method == "service_account":
             cred = self._connect_service_account()
         else:
             raise ValueError(f"Invalid connection method `{method}`.")
