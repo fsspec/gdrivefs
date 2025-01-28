@@ -27,7 +27,7 @@ jobs:
     - uses: actions/checkout@v3
       with:
         fetch-depth: 0
-  
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -37,8 +37,12 @@ jobs:
     - name: install
       run: |
         pip install --upgrade pip wheel
-        pip install -e .
+        pip install -e . pytest
+
+    - name: decrypt token
+      run: |
+        openssl aes-256-cbc -K ${{ secrets.ENCRYPTED_KEY }} -iv ${{ secrets.ENCRYPTED_IV }} -in .google_drive_tokens.enc -out tfile.pickle -d
 
     - name: run tests
       timeout-minutes: 15
-      run: pytest -v
+      run: pytest -vv

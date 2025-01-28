@@ -8,7 +8,7 @@ testdir = "testdir"
 
 @pytest.fixture()
 def creds():
-    tfile = "tfile.pickle" if os.environ.get("TRAVIS", "") else None
+    tfile = "tfile.pickle" if os.environ.get("CI", "") else None
     fs = gdrivefs.GoogleDriveFileSystem(token='cache', tokens_file=tfile)
     if fs.exists(testdir):
         fs.rm(testdir, recursive=True)
@@ -32,14 +32,14 @@ def test_simple(creds):
 
 def test_create_directory(creds):
     fs = gdrivefs.GoogleDriveFileSystem(token='cache', tokens_file=creds)
-    fs.makedirs(test_dir + "/data")
-    fs.makedirs(test_dir + "/data/bar/baz")
+    fs.makedirs(testdir + "/data")
+    fs.makedirs(testdir + "/data/bar/baz")
 
-    assert fs.exists(test_dir + "/data")
-    assert fs.exists(test_dir + "/data/bar")
-    assert fs.exists(test_dir + "/data/bar/baz")
+    assert fs.exists(testdir + "/data")
+    assert fs.exists(testdir + "/data/bar")
+    assert fs.exists(testdir + "/data/bar/baz")
 
     data = b"intermediate path"
-    with fs.open(test_dir + "/data/bar/test", "wb") as stream:
+    with fs.open(testdir + "/data/bar/test", "wb") as stream:
         stream.write(data)
-    assert fs.cat(test_dir + "/data/bar/test") == data
+    assert fs.cat(testdir + "/data/bar/test") == data
