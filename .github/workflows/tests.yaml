@@ -39,10 +39,6 @@ jobs:
         pip install --upgrade pip wheel
         pip install -e . pytest
 
-    - name: decrypt token
-      run: |
-        openssl aes-256-cbc -K ${{ secrets.ENCRYPTED_KEY }} -iv ${{ secrets.ENCRYPTED_IV }} -in .google_drive_tokens.enc -out tfile.pickle -d
-
     - name: run tests
       timeout-minutes: 15
       run: pytest -vv

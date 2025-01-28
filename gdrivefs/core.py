@@ -96,9 +96,13 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         self._drives = srv.drives()
         self.service = srv.files()
 
+    @property
+    def _user_credentials_cache_path(self):
+        return pydata_google_auth.cache.READ_WRITE._path
+
     def _connect_browser(self):
         try:
-            os.remove(pydata_google_auth.cache.READ_WRITE._path)
+            os.remove(self._user_credentials_cache_path)
         except OSError:
             pass
         return self._connect_cache()
@@ -107,10 +111,10 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         return pydata_google_auth.get_user_credentials(
             self.scopes, use_local_webserver=True
         )
-    
+
     def _connect_service_account(self):
         return service_account.Credentials.from_service_account_info(
-                                    info=self.creds, 
+                                    info=self.creds,
                                     scopes=self.scopes)
     @property
     def drives(self):

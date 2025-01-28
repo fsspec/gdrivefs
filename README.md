@@ -12,7 +12,7 @@ You can install it directly from source using pip:
 pip install git+https://github.com/fsspec/gdrivefs
 ```
 
-> [!IMPORTANT]  
+> [!IMPORTANT]
 > gdrivefs is *not* released on PyPI. Note that there is a project on PyPI with the name `gdrivefs` which is unrelated and does not implement fsspec. See #21.
 
 ## Usage
@@ -30,7 +30,7 @@ There are several methods to authenticate gdrivefs against Google Drive.
     ```python
     fs = GoogleDriveFileSystem(creds=service_account_credentials)
     ```
-   
+
 2. OAuth with user credentials
 
     A browser will be opened to complete the OAuth authentication flow. Afterwards, the access token will be stored locally and you can re-use it in subsequent sessions.
@@ -53,6 +53,35 @@ There are several methods to authenticate gdrivefs against Google Drive.
     ```
 
 See [GoogleDriveFileSystem](https://github.com/fsspec/gdrivefs/blob/master/gdrivefs/core.py#L41) docstring for more details.
+
+## Development
+
+### Running tests
+
+#### Unit tests
+
+```sh
+pip install -e . pytest
+pytest -v
+```
+
+#### Integration tests
+
+To run integration tests, you need to have user credentials cached locally that can be used to interact with your real Google Drive account. You can do this by running the following command:
+
+```py
+import gdrivefs
+fs = gdrivefs.GoogleDriveFileSystem(token='browser')
+print(fs._user_credentials_cache_dir)
+```
+
+Alternatively, you can save user credentials in a file and set the environment variable `GDRIVEFS_CREDENTIALS_PATH` to the path of the file.
+
+Then you can run the integration tests:
+
+```sh
+pytest -v -m integration
+```
 
 ## Other implementations
 
