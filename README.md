@@ -75,7 +75,7 @@ fs = gdrivefs.GoogleDriveFileSystem(token='browser')
 print(fs._user_credentials_cache_dir)
 ```
 
-Alternatively, you can save user credentials in a file and set the environment variable `GDRIVEFS_CREDENTIALS_PATH` to the path of the file.
+Alternatively, you can save user credentials in a file and set the environment variable `GDRIVEFS_USER_CREDENTIALS_PATH` to the path of the file.
 
 Then you can run the integration tests:
 

@@ -8,7 +8,7 @@ testdir = "gdrivefs/testdir"
 
 @pytest.fixture()
 def creds():
-    tfile = os.getenv("GDRIVEFS_CREDENTIALS_PATH") or None
+    tfile = os.getenv("GDRIVEFS_USER_CREDENTIALS_PATH") or None
     fs = gdrivefs.GoogleDriveFileSystem(token="cache", tokens_file=tfile)
     if fs.exists(testdir):
         fs.rm(testdir, recursive=True)
