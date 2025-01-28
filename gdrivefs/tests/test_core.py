@@ -16,11 +16,10 @@ def creds():
     try:
         yield tfile
     finally:
-        pass
-        # try:
-        #     fs.rm(testdir, recursive=True)
-        # except IOError:
-        #     pass
+        try:
+            fs.rm(testdir, recursive=True)
+        except IOError:
+            pass
 
 
 def test_create_anon():
