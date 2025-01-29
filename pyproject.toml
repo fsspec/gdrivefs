@@ -38,3 +38,13 @@ packages = ["gdrivefs", "gdrivefs.tests"]
 
 [tool.setuptools_scm]
 version_file = "gdrivefs/_version.py"
+
+[tool.pytest.ini_options]
+addopts = """\
+    --strict-markers \
+    -m "not (integration)"
+    """
+
+markers = [
+    "integration: marks test as integration test consuming external resources (select with '-m integration')",
+]
