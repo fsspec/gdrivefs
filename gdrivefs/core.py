@@ -41,11 +41,11 @@ class GoogleDriveFileSystem(AbstractFileSystem):
     protocol = "gdrive"
     root_marker = ''
 
-    def __init__(self, root_file_id=None, token="browser",
+    def __init__(self, root_file_id=None, token="cache",
                  access="full_control", spaces='drive',
                  **kwargs):
         """
-        Access to dgrive as a file-system
+        Access to doogle-grive as a file-system
 
         :param root_file_id: str or None
             If you have a share, drive or folder ID to treat as the FS root, enter
@@ -55,9 +55,9 @@ class GoogleDriveFileSystem(AbstractFileSystem):
             be put in a browser, and cache the response for future use with token="cache".
             "browser" will remove any previously cached token file if it exists.
         :param access: str
-            One of "full_control", "read_only
+            One of "full_control", "read_only"
         :param spaces:
-            Category of files to search, can be  'drive', 'appDataFolder' and 'photos'.
+            Category of files to search; can be 'drive', 'appDataFolder' and 'photos'.
             Of these, only the first is general
         :param kwargs:
             Passed to parent
@@ -65,7 +65,6 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         super().__init__(**kwargs)
         self.access = access
         self.scopes = [scope_dict[access]]
-        self.token = token
         self.spaces = spaces
         self.root_file_id = root_file_id or 'root'
         self.connect(method=token)
@@ -80,7 +79,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         else:
             raise ValueError(f"Invalid connection method `{method}`.")
         srv = build('drive', 'v3', credentials=cred)
-        self._drives = srv.drives()
+        self.srv = srv
         self.service = srv.files()
 
     def _connect_browser(self):
@@ -97,10 +96,16 @@ class GoogleDriveFileSystem(AbstractFileSystem):
 
     @property
     def drives(self):
-        if self._drives is not None:
-            return self._drives.list().execute()['drives']
-        else:
-            return []
+        """Drives accessible to the current user"""
+        out = []
+        page_token = None
+        while True:
+            ret = self.srv.drives().list(pageToken=page_token).execute()
+            out.extend(ret['drives'])
+            page_token = ret.get('nextPageToken')
+            if page_token is None:
+                break
+        return out
 
     def mkdir(self, path, create_parents=True, **kwargs):
         if create_parents and self._parent(path):
@@ -143,7 +148,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         return _finfo_from_response(response, path_prefix)
 
     def export(self, path, mime_type):
-        """ Convert a google-native file to other format and download
+        """Convert a google-native file to another format and download
 
         mime_type is something like "text/plain"
         """
@@ -173,20 +178,27 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         else:
             return sorted([f["name"] for f in files])
 
-    def _list_directory_by_id(self, file_id, trashed=False, path_prefix=None):
+    def _list_directory_by_id(self, file_id, trashed=False, path_prefix=None,
+                              drive=None):
         all_files = []
         page_token = None
         afields = 'nextPageToken, files(%s)' % fields
         query = f"'{file_id}' in parents  "
         if not trashed:
             query += "and trashed = false "
+        if drive is not None:
+            kwargs = dict(includeItemsFromAllDrives=True, corpora="drive", supportsAllDrives=True)
+        else:
+            kwargs = {}
         while True:
-            response = self.service.list(q=query,
-                                         spaces=self.spaces, fields=afields,
-                                         pageToken=page_token).execute()
+            response = self.service.list(
+                q=query,
+                spaces=self.spaces, fields=afields,
+                pageToken=page_token, driveId=drive,
+                **kwargs
+            ).execute()
             for f in response.get('files', []):
                 all_files.append(_finfo_from_response(f, path_prefix))
-            more = response.get('incompleteSearch', False)
             page_token = response.get('nextPageToken', None)
             if page_token is None:
                 break
@@ -255,6 +267,7 @@ class GoogleDriveFile(AbstractBufferedFile):
             self.location = None
         else:
             self.file_id = fs.path_to_file_id(path)
+            self._media_object = None
 
     def _fetch_range(self, start=None, end=None):
         """ Get data from Google Drive
@@ -263,17 +276,16 @@ class GoogleDriveFile(AbstractBufferedFile):
             if not both None, fetch only given range
         """
 
+        if self._media_object is None:
+            self._media_object = self.fs.service.get_media(fileId=self.file_id)
         if start is not None or end is not None:
             start = start or 0
             end = end or 0
-            head = {'Range': 'bytes=%i-%i' % (start, end - 1)}
+            self._media_object.headers['Range'] = 'bytes=%i-%i' % (start, end - 1)
         else:
-            head = {}
+            self._media_object.headers.pop('Range', None)
         try:
-            files_service = self.fs.service
-            media_obj = files_service.get_media(fileId=self.file_id)
-            media_obj.headers.update(head)
-            data = media_obj.execute()
+            data = self._media_object.execute()
             return data
         except HttpError as e:
             # TODO : doc says server might send everything if range is outside
