@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "setuptools-scm"]
+requires = ["setuptools>=64", "setuptools_scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -31,5 +31,17 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "http://github.com/fsspec/gdrivefs"
-Repository = "http://github.com/fsspec/gdrivefs"
+Source = "http://github.com/fsspec/gdrivefs"
+
+[tool.setuptools_scm]
+version_file = "gdrivefs/_version.py"
+
+[tool.pytest.ini_options]
+addopts = """\
+    --strict-markers \
+    -m "not (integration)"
+    """
+
+markers = [
+    "integration: marks test as integration test consuming external resources (select with '-m integration')",
+]
