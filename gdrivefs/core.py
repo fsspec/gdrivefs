@@ -119,6 +119,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
     @property
     def drives(self):
         """Drives accessible to the current user"""
+        # TODO: cache this?
         out = []
         page_token = None
         while True:
@@ -177,22 +178,42 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         file_id = self.path_to_file_id(path)
         return self.service.export(fileId=file_id, mimeType=mime_type).execute()
 
+    def split_drive(self, path):
+        root, *_ = path.rsplit("/", 1)
+        if ":" in root:
+            drive, rest = path.split(":", 1)
+        else:
+            return None, path
+        if len(drive) == 19 and drive[0] == "0":
+            return drive, rest
+        drive = [_["id"] for _ in self.drives if _["name"] == drive]
+        if len(drive) == 0:
+            raise ValueError(f"Drive name {drive} not found")
+        elif len(drive) == 1:
+            return drive[0], rest
+        else:
+            raise ValueError(f"Drive name {drive} refers to multiple shared drives")
+
     def ls(self, path, detail=False, trashed=False):
         path = self._strip_protocol(path)
         if path in [None, '/']:
-            path = ""
-        files = self._ls_from_cache(path)
+            path0 = ""
+        else:
+            path0 = path
+        files = self._ls_from_cache(path0)
+        drive, path = self.split_drive(path0)
+
         if not files:
             if path == "":
                 file_id = self.root_file_id
             else:
-                file_id = self.path_to_file_id(path, trashed=trashed)
+                file_id = self.path_to_file_id(path, trashed=trashed, drive=drive)
             files = self._list_directory_by_id(file_id, trashed=trashed,
-                                               path_prefix=path)
+                                               path_prefix=path, drive=drive)
             if files:
-                self.dircache[path] = files
+                self.dircache[path0] = files
             else:
-                file_id = self.path_to_file_id(path, trashed=trashed)
+                file_id = self.path_to_file_id(path0, trashed=trashed, drive=drive)
                 files = [self._info_by_id(file_id)]
 
         if detail:
@@ -200,23 +221,32 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         else:
             return sorted([f["name"] for f in files])
 
+    @staticmethod
+    def _drive_kw(drive=None):
+        if drive is not None:
+            return dict(includeItemsFromAllDrives=True, corpora="drive", supportsAllDrives=True,
+                        driveId=drive)
+        else:
+            return {}
+
+
     def _list_directory_by_id(self, file_id, trashed=False, path_prefix=None,
                               drive=None):
         all_files = []
         page_token = None
         afields = 'nextPageToken, files(%s)' % fields
-        query = f"'{file_id}' in parents  "
+        if file_id == "root" and drive is not None:
+            query = f"'{drive}' in parents "
+        else:
+            query = f"'{file_id}' in parents "
         if not trashed:
             query += "and trashed = false "
-        if drive is not None:
-            kwargs = dict(includeItemsFromAllDrives=True, corpora="drive", supportsAllDrives=True)
-        else:
-            kwargs = {}
+        kwargs = self._drive_kw(drive)
         while True:
             response = self.service.list(
                 q=query,
                 spaces=self.spaces, fields=afields,
-                pageToken=page_token, driveId=drive,
+                pageToken=page_token,
                 **kwargs
             ).execute()
             for f in response.get('files', []):
@@ -226,25 +256,25 @@ class GoogleDriveFileSystem(AbstractFileSystem):
                 break
         return all_files
 
-    def path_to_file_id(self, path, parent=None, trashed=False):
+    def path_to_file_id(self, path, parent=None, trashed=False, drive=None):
         items = path.strip('/').split('/')
         if path in ["", "/", "root", self.root_file_id]:
             return self.root_file_id
         if parent is None:
             parent = self.root_file_id
         top_file_id = self._get_directory_child_by_name(items[0], parent,
-                                                        trashed=trashed)
+                                                        trashed=trashed, drive=drive)
         if len(items) == 1:
             return top_file_id
         else:
             sub_path = '/'.join(items[1:])
             return self.path_to_file_id(sub_path, parent=top_file_id,
-                                        trashed=trashed)
+                                        trashed=trashed, drive=drive)
 
     def _get_directory_child_by_name(self, child_name, directory_file_id,
-                                     trashed=False):
+                                     trashed=False, drive=None):
         all_children = self._list_directory_by_id(directory_file_id,
-                                                  trashed=trashed)
+                                                  trashed=trashed, drive=drive)
         possible_children = []
         for child in all_children:
             if child['name'] == child_name:
@@ -288,7 +318,7 @@ class GoogleDriveFile(AbstractBufferedFile):
         if mode == 'wb':
             self.location = None
         else:
-            self.file_id = fs.path_to_file_id(path)
+            self.file_id = fs.info(path)["id"]
             self._media_object = None
 
     def _fetch_range(self, start=None, end=None):
@@ -346,7 +376,7 @@ class GoogleDriveFile(AbstractBufferedFile):
         status = int(head['status'])
         assert status < 400, "Init upload failed"
         if status in [200, 201]:
-            # server thinks we are finished, this should happen
+            # server thinks we are finished - this should happen
             # only when closing
             self.file_id = json.loads(body.decode())['id']
         elif 'range' in head:
@@ -367,7 +397,7 @@ class GoogleDriveFile(AbstractBufferedFile):
         # also allows description, MIME type, version, thumbnail...
         body = json.dumps({"name": self.path.rsplit('/', 1)[-1],
                            "parents": [parent_id]}).encode()
-        req = self.fs.service._http.request
+        req = self.fs.service._http.request  # partial with correct creds
         # TODO : this creates a new file. If the file exists, you should
         #   update it by getting the ID and using PATCH, else you get two
         #   identically-named files
