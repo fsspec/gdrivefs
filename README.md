@@ -2,11 +2,11 @@
 
 This is an implementation of the fsspec interface for Google Drive.
 
-This software is in alpha stage and should not be relied upon in production settings.
+This software is in beta stage and should not be relied upon in production settings.
 
 ## Installation
 
-You can install it with pip or directly from source using pip:
+You can install it with pip from pypi or directly from source:
 
 ```sh
 pip install gdrive_fs
@@ -65,12 +65,12 @@ pytest -v
 
 #### Integration tests
 
-To run integration tests, you need to have user credentials cached locally that can be used to interact with your real Google Drive account. You can do this by running the following command:
+To run integration tests, you need to have user credentials cached locally that can be used to
+interact with your real Google Drive account. You can do this by running the following:
 
 ```py
 import gdrive_fs
 fs = gdrive_fs.GoogleDriveFileSystem(token='browser')
-print(fs._user_credentials_cache_dir)
 ```
 
 Alternatively, you can save user credentials in a file and set the environment variable `GDRIVEFS_USER_CREDENTIALS_PATH` to the path of the file.

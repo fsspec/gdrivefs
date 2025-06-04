@@ -95,7 +95,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
             raise ValueError(f"Invalid connection method `{method}`.")
         srv = build('drive', 'v3', credentials=cred)
         self.srv = srv
-        self.service = srv.files()
+        self.files = srv.files()
 
     @property
     def _user_credentials_cache_path(self):
@@ -138,7 +138,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         meta = {"name": path.rstrip("/").rsplit("/", 1)[-1],
                 'mimeType': DIR_MIME_TYPE,
                 "parents": [parent_id]}
-        self.service.create(body=meta).execute()
+        self.files.create(body=meta).execute()
         self.invalidate_cache(self._parent(path))
 
     def makedirs(self, path, exist_ok=True):
@@ -152,7 +152,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         self.mkdir(path, create_parents=False)
 
     def _delete(self, file_id):
-        self.service.delete(fileId=file_id).execute()
+        self.files.delete(fileId=file_id).execute()
 
     def rm(self, path, recursive=True, maxdepth=None):
         if recursive is False and self.isdir(path) and self.ls(path):
@@ -167,7 +167,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         self.rm(path, recursive=False)
 
     def _info_by_id(self, file_id, path_prefix=None):
-        response = self.service.get(fileId=file_id, fields=fields,
+        response = self.files.get(fileId=file_id, fields=fields,
                                     ).execute()
         return _finfo_from_response(response, path_prefix)
 
@@ -177,7 +177,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         mime_type is something like "text/plain"
         """
         file_id = self.path_to_file_id(path)
-        return self.service.export(fileId=file_id, mimeType=mime_type).execute()
+        return self.files.export(fileId=file_id, mimeType=mime_type).execute()
 
     def split_drive(self, path):
         root, *_ = path.rsplit("/", 1)
@@ -245,7 +245,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
             query += "and trashed = false "
         kwargs = self._drive_kw(drive)
         while True:
-            response = self.service.list(
+            response = self.files.list(
                 q=query,
                 spaces=self.spaces, fields=afields,
                 pageToken=page_token,
@@ -331,7 +331,7 @@ class GoogleDriveFile(AbstractBufferedFile):
         """
 
         if self._media_object is None:
-            self._media_object = self.fs.service.get_media(fileId=self.file_id)
+            self._media_object = self.fs.files.get_media(fileId=self.file_id)
         if start is not None or end is not None:
             start = start or 0
             end = end or 0
@@ -372,7 +372,7 @@ class GoogleDriveFile(AbstractBufferedFile):
                 self.offset, self.offset + l - 1)
         head.update({'Content-Type': 'application/octet-stream',
                      'Content-Length': str(l)})
-        req = self.fs.service._http.request
+        req = self.fs.files._http.request
         head, body = req(self.location, method="PUT", body=data,
                          headers=head)
         status = int(head['status'])
@@ -399,7 +399,7 @@ class GoogleDriveFile(AbstractBufferedFile):
         # also allows description, MIME type, version, thumbnail...
         body = json.dumps({"name": self.path.rsplit('/', 1)[-1],
                            "parents": [parent_id]}).encode()
-        req = self.fs.service._http.request  # partial with correct creds
+        req = self.fs.files._http.request  # partial with correct creds
         # TODO : this creates a new file. If the file exists, you should
         #   update it by getting the ID and using PATCH, else you get two
         #   identically-named files
