@@ -1,3 +1,4 @@
+from functools import cached_property
 import re
 import json
 import os
@@ -31,6 +32,7 @@ def _finfo_from_response(f, path_prefix=None):
         name = _normalize_path(path_prefix, f['name'])
     else:
         name = f['name']
+    f.pop("capabilities", None)  # remove annoying big dict
     info = {'name': name.lstrip('/'),
             'size': int(f.get('size', 0)),
             'type': ftype}
@@ -116,10 +118,9 @@ class GoogleDriveFileSystem(AbstractFileSystem):
                                     info=self.creds,
                                     scopes=self.scopes)
 
-    @property
+    @cached_property
     def drives(self):
         """Drives accessible to the current user"""
-        # TODO: cache this?
         out = []
         page_token = None
         while True:
@@ -185,6 +186,7 @@ class GoogleDriveFileSystem(AbstractFileSystem):
         else:
             return None, path
         if len(drive) == 19 and drive[0] == "0":
+            # + other conditions, seems to be "^0[a-zA-Z0-9_-]{18}$"
             return drive, rest
         drive = [_["id"] for _ in self.drives if _["name"] == drive]
         if len(drive) == 0:
