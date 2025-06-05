@@ -23,32 +23,40 @@ There are several methods to authenticate gdrivefs against Google Drive.
 
 1. Service account credentials
 
-    In this method, you providea dict containing the service account credentials obtainend in GCP console. The dict content is the same as the json file downloaded from GCP console. More details can be found here: <https://cloud.google.com/iam/docs/service-account-creds#key-types>. This credential can be useful when integrating with other GCP services, and when you don't want the user to be prompted to authenticate.
+In this method, you provide a dict containing the service account credentials obtained
+in the GCP console. The dict content is the same as the JSON file downloaded from the GCP console. 
+More details can be found here: <https://cloud.google.com/iam/docs/service-account-creds#key-types>.
+This credential can be useful 
+when integrating with other GCP services, and when you don't want the user to 
+be prompted to authenticate.
 
-   ```python
-   fs = GoogleDriveFileSystem(creds=service_account_credentials)
-   ```
+```python
+from gdrive_fs import GoogleDriveFileSystem
+fs = GoogleDriveFileSystem(creds=service_account_credentials)
+```
 
 2. OAuth with user credentials
 
-    A browser will be opened to complete the OAuth authentication flow. Afterwards, the access token will be stored locally and you can re-use it in subsequent sessions.
+ A browser will be opened to complete the OAuth authentication flow. Afterwards, the access
+token will be stored locally, and you can re-use it in subsequent sessions.
 
-    ```python
-    # use this the first time you run
-    token = 'browser'
-    # use this on subsequent attempts
-    #token = 'cache'
-    fs = gdrivefs.GoogleDriveFileSystem(token=token)
-    ```
+```python
+# use this the first time you run
+token = 'browser'
+# use this on subsequent attempts
+# token = 'cache'
+fs = GoogleDriveFileSystem(token=token)
+ ```
 
 3. Anonymous (read-only) access
 
-    If you want to interact with files that are shared publicly ("anyone with the link"), then you do not need to authenticate to Google Drive.
+If you want to interact with files that are shared publicly ("anyone with the link"), 
+then you do not need to authenticate to Google Drive.
 
-    ```python
-    token = 'anon'
-    fs = GoogleDriveFileSystem(token=token)
-    ```
+```python
+token = 'anon'
+fs = GoogleDriveFileSystem(token=token)
+```
 
 See [GoogleDriveFileSystem](https://github.com/fsspec/gdrivefs/blob/master/gdrivefs/core.py#L41) docstring for more details.
 
@@ -73,7 +81,8 @@ import gdrive_fs
 fs = gdrive_fs.GoogleDriveFileSystem(token='browser')
 ```
 
-Alternatively, you can save user credentials in a file and set the environment variable `GDRIVEFS_USER_CREDENTIALS_PATH` to the path of the file.
+Alternatively, you can save user credentials in a file and set the environment variable
+`GDRIVEFS_USER_CREDENTIALS_PATH` to the path of the file.
 
 Then you can run the integration tests:
 

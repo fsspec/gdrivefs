@@ -24,7 +24,7 @@ def creds():
 
 def test_create_anon():
     fs = gdrive_fs.GoogleDriveFileSystem(token="anon")
-    assert fs.service is not None
+    assert fs.srv is not None
 
 
 @pytest.mark.integration
