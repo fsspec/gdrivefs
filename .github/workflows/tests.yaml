@@ -42,3 +42,13 @@ jobs:
     - name: run tests
       timeout-minutes: 15
       run: pytest -vv
+
+  lint:
+    name: lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@main
+      - uses: actions/setup-python@main
+        with:
+          python-version: "3.11"
+      - uses: pre-commit/action@main
