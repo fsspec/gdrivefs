@@ -3,7 +3,7 @@ requires = ["setuptools>=64", "setuptools_scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "gdrivefs"
+name = "gdrive_fs"
 dynamic = ["version"]
 description = "File system on GDrive"
 readme = {file = "README.md", content-type = "text/markdown"}
@@ -34,7 +34,7 @@ dependencies = [
 Source = "http://github.com/fsspec/gdrivefs"
 
 [tool.setuptools_scm]
-version_file = "gdrivefs/_version.py"
+version_file = "gdrive_fs/_version.py"
 
 [tool.pytest.ini_options]
 addopts = """\
