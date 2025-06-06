@@ -9,7 +9,7 @@ This software is in beta stage and should not be relied upon in production setti
 You can install it with pip from pypi or directly from source:
 
 ```sh
-pip install gdrive_fs
+pip install gdrive_fsspec
 pip install git+https://github.com/fsspec/gdrivefs
 ```
 
@@ -31,7 +31,7 @@ when integrating with other GCP services, and when you don't want the user to
 be prompted to authenticate.
 
 ```python
-from gdrive_fs import GoogleDriveFileSystem
+from gdrive_fsspec import GoogleDriveFileSystem
 fs = GoogleDriveFileSystem(creds=service_account_credentials)
 ```
 
@@ -77,8 +77,8 @@ To run integration tests, you need to have user credentials cached locally that 
 interact with your real Google Drive account. You can do this by running the following:
 
 ```py
-import gdrive_fs
-fs = gdrive_fs.GoogleDriveFileSystem(token='browser')
+import gdrive_fsspec
+fs = gdrive_fsspec.GoogleDriveFileSystem(token='browser')
 ```
 
 Alternatively, you can save user credentials in a file and set the environment variable
